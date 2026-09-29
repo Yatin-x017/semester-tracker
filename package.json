@@ -3,14 +3,36 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "typecheck": "node --check src/worker.js"
+    "predev": "node scripts/check-dev-vars.mjs",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "npm run build && vite preview",
+    "deploy": "npm run build && wrangler deploy",
+    "typecheck": "tsc -b",
+    "cf-typegen": "wrangler types"
+  },
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.4.4",
+    "@supabase/supabase-js": "^2.81.0",
+    "pdfjs-dist": "^5.4.149",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "three": "^0.180.0"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.13.14",
+    "@cloudflare/workers-types": "^5.20260929.1",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@types/three": "^0.186.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9",
     "wrangler": "^4.0.0"
   },
   "allowScripts": {
-    "workerd@1.20260926.1": true
+    "workerd@1.20260926.1": true,
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.3": true
   }
 }

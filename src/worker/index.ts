@@ -1,7 +1,19 @@
-const json = (o, status = 200) =>
+// API worker: proxies /api/chat to Groq with auth (Supabase session or app token).
+
+interface Env {
+  MODEL?: string;
+  SUPABASE_URL?: string;
+  SUPABASE_ANON_KEY?: string;
+  ALLOWED_EMAIL?: string;
+  APP_TOKEN?: string;
+  GROQ_API_KEY?: string;
+  ASSETS: { fetch: (req: Request) => Promise<Response> };
+}
+
+const json = (o: unknown, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json" } });
 
-async function authorized(request, env) {
+async function authorized(request: Request, env: Env): Promise<boolean> {
   if (env.SUPABASE_URL) {
     const h = request.headers.get("Authorization") || "";
     if (!h.startsWith("Bearer ")) return false;
@@ -10,7 +22,7 @@ async function authorized(request, env) {
     });
     if (!r.ok) return false;
     if (env.ALLOWED_EMAIL) {
-      const u = await r.json().catch(() => ({}));
+      const u = (await r.json().catch(() => ({}))) as { email?: string };
       return u.email === env.ALLOWED_EMAIL;
     }
     return true;
@@ -24,7 +36,7 @@ async function authorized(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/chat") {
@@ -32,8 +44,12 @@ export default {
       if (!(await authorized(request, env))) return json({ error: "Unauthorized" }, 401);
       if (!env.GROQ_API_KEY) return json({ error: "GROQ_API_KEY is not set" }, 500);
 
-      let body;
-      try { body = await request.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
+      let body: { messages?: unknown };
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "Invalid JSON" }, 400);
+      }
       const messages = Array.isArray(body.messages) ? body.messages.slice(-20) : [];
       if (!messages.length || JSON.stringify(messages).length > 60000) {
         return json({ error: "Empty or too large request" }, 400);
@@ -49,13 +65,17 @@ export default {
           max_tokens: 1500,
         }),
       });
-      const data = await upstream.json().catch(() => ({}));
+      const data = (await upstream.json().catch(() => ({}))) as {
+        error?: { message?: string };
+        choices?: { message?: { content?: string } }[];
+      };
       if (!upstream.ok) {
         const msg = data?.error?.message || "Upstream error";
         return json({ error: msg }, upstream.status === 429 ? 429 : 502);
       }
       const text = (data.choices?.[0]?.message?.content || "")
-        .replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+        .replace(/<think>[\s\S]*?<\/think>/g, "")
+        .trim();
       return json({ text });
     }
 
