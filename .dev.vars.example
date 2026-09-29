@@ -1,0 +1,7 @@
+# Copy to .dev.vars and fill in your own values. Never commit real secrets.
+# Get a Groq key at console.groq.com
+GROQ_API_KEY=
+# APP_TOKEN is only used when SUPABASE_URL is empty (local-only mode)
+APP_TOKEN=
+# The single email allowed to use the AI endpoint
+ALLOWED_EMAIL=
