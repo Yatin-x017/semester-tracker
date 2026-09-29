@@ -14,38 +14,94 @@ export interface PokeAct {
 }
 
 // Albedo palette: white hair, near-black dress, pale skin, crimson eyes.
-const GOTH = {
-  skin: new THREE.Color(0xf6ede8),
-  hair: new THREE.Color(0xece7ee),
-  cloth: new THREE.Color(0x0d0c11),
-  eye: new THREE.Color(0x8e1f2c),
-};
-
-/** Gothic-palette tint for the fallback sample model (custom models keep their own colors). */
-function tintGothic(vrm: VRM): void {
+/**
+ * Recolor the sample model to Albedo's palette at the TEXTURE level.
+ * Setting material.color alone just multiplies the existing texture (brown stays
+ * brown), so we rewrite the texture pixels: dark hair -> white, white dress ->
+ * near-black, preserving shading. Skin and eyes are left untouched.
+ */
+async function recolorSample(vrm: VRM): Promise<void> {
+  const jobs: Promise<void>[] = [];
   vrm.scene.traverse((o: THREE.Object3D) => {
-    const mats = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+    const mesh = o as THREE.Mesh;
+    const mats = mesh.material as THREE.Material | THREE.Material[] | undefined;
     if (!mats) return;
-    (Array.isArray(mats) ? mats : [mats]).forEach((mat) => {
+    for (const mat of Array.isArray(mats) ? mats : [mats]) {
       const m = mat as THREE.MeshStandardMaterial;
-      if (!m || !(m as THREE.MeshStandardMaterial).color) return;
+      if (!m || !m.color) continue;
       const n = (m.name || "").toLowerCase();
-      const c = m.color;
-      const l = c.r * 0.299 + c.g * 0.587 + c.b * 0.114;
-      const mx = Math.max(c.r, c.g, c.b);
-      const mn = Math.min(c.r, c.g, c.b);
-      const sat = mx ? (mx - mn) / mx : 0;
-      if (/ey(e|e_)|iris|hitomi/.test(n) && !/high|light|lash|brow/.test(n)) m.color.copy(GOTH.eye);
-      else if (/hair|kami|head_..?$/.test(n)) m.color.copy(GOTH.hair);
-      else if (/skin|face|body|hada/.test(n) && l > 0.45) m.color.copy(GOTH.skin);
-      else if (l > 0.8 && sat < 0.25) m.color.copy(GOTH.skin);
-      else m.color.copy(GOTH.cloth);
-      // kill colored emission so the palette stays clean
-      if ((m as THREE.MeshStandardMaterial).emissive) {
-        m.emissive.multiplyScalar(0.2);
-      }
-    });
+      if (/eye/.test(n) && !/lash|brow|high/.test(n)) continue; // keep eyes as-is
+      if (/skin|face|body$|hada/.test(n)) continue; // keep skin as-is
+      if (m.map && m.map.image) jobs.push(recolorTexture(m, n));
+      else if (/hair|kami/.test(n)) m.color.set(0xf2f0f4);
+      else m.color.set(0x14141c);
+    }
   });
+  await Promise.all(jobs);
+}
+
+async function recolorTexture(m: THREE.MeshStandardMaterial, name: string): Promise<void> {
+  try {
+    const srcTex = m.map;
+    if (!srcTex) return;
+    const src = srcTex.image as HTMLImageElement | ImageBitmap;
+    const w = Math.min(512, (src as HTMLImageElement).width || 256);
+    const h = Math.min(512, (src as HTMLImageElement).height || 256);
+    if (!w || !h) return;
+    const cv = document.createElement("canvas");
+    cv.width = w;
+    cv.height = h;
+    const ctx = cv.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+    ctx.drawImage(src as CanvasImageSource, 0, 0, w, h);
+    const data = ctx.getImageData(0, 0, w, h);
+    const px = data.data;
+
+    // Classify the part by its average color
+    let r = 0, g = 0, b = 0, count = 0;
+    for (let i = 0; i < px.length; i += 4) {
+      if (px[i + 3] < 40) continue;
+      r += px[i]; g += px[i + 1]; b += px[i + 2]; count++;
+    }
+    if (!count) return;
+    r /= count; g /= count; b /= count;
+    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    const sat = mx ? (mx - mn) / mx : 0;
+
+    let mode: "white" | "dark";
+    if (/hair|kami/.test(name)) mode = "white";
+    else if (/top|cloth|suit|dress|wear|clothes/.test(name)) mode = "dark";
+    else if (lum < 0.45) mode = "white"; // dark/brown texture = hair
+    else if (lum > 0.72 && sat < 0.25) mode = "dark"; // white texture = dress
+    else return; // skin or unknown: leave alone
+
+    for (let i = 0; i < px.length; i += 4) {
+      if (px[i + 3] < 40) continue;
+      const l = (0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]) / 255;
+      if (mode === "white") {
+        // lift to white hair while keeping relative shading
+        const v = Math.min(255, (0.78 + l * 0.2) * 255) | 0;
+        px[i] = v; px[i + 1] = v; px[i + 2] = (v * 0.985) | 0;
+      } else {
+        // crush to near-black dress, slight blue cast, keep shading
+        const v = (l * 46) | 0;
+        px[i] = v; px[i + 1] = v; px[i + 2] = Math.min(255, (v * 1.35) | 0);
+      }
+    }
+    ctx.putImageData(data, 0, 0);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.flipY = srcTex.flipY;
+    tex.wrapS = srcTex.wrapS;
+    tex.wrapT = srcTex.wrapT;
+    srcTex.dispose();
+    m.map = tex;
+    m.color.set(0xffffff);
+    m.needsUpdate = true;
+  } catch {
+    /* keep original texture on any failure */
+  }
 }
 
 export class VrmEngine {
@@ -113,20 +169,21 @@ export class VrmEngine {
     const gltf = await new Promise<any>((ok, no) => loader.load(url, ok, undefined, no));
     const vrm: VRM = gltf.userData.vrm;
     if (this.disposed) throw new Error("disposed");
+    this.vrm = vrm;
     // VRM0 models (VRoid Studio default export) face away from the camera; rotate them.
     VRMUtils.rotateVRM0(vrm);
-    this.vrm = vrm;
-    if (!ownColors) tintGothic(vrm);
+    // sample model: rewrite textures to Albedo's palette (custom models keep their own)
+    if (!ownColors) await recolorSample(vrm);
     vrm.scene.traverse((o: THREE.Object3D) => {
       o.frustumCulled = false;
     });
     this.scene.add(vrm.scene);
     if (vrm.lookAt) vrm.lookAt.target = this.lookTarget;
-    // relaxed A-pose
+    // relaxed neutral pose (large Z rotations put the model in a praise pose)
     const la = this.bone("leftUpperArm");
     const ra = this.bone("rightUpperArm");
-    if (la) la.rotation.z = 1.15;
-    if (ra) ra.rotation.z = -1.15;
+    if (la) la.rotation.z = 0.06;
+    if (ra) ra.rotation.z = -0.06;
     return vrm;
   }
 
@@ -230,8 +287,8 @@ export class VrmEngine {
       hd.rotation.z = (rtp === "tilt" ? side * 0.3 * rv : 0) + (rtp === "shudder" ? 0.05 * Math.sin(t * 29) * rv : 0);
       hd.rotation.x = rtp === "lean" ? -0.1 * rv : 0;
     }
-    if (la) la.rotation.z = 1.15 + 0.05 * Math.sin(t * 1.3) + (rtp === "lean" ? 0.1 * rv : 0);
-    if (ra) ra.rotation.z = -1.15 - 0.05 * Math.sin(t * 1.3 + 1) - (rtp === "lean" ? 0.1 * rv : 0);
+    if (la) la.rotation.z = 0.06 + 0.03 * Math.sin(t * 1.3) + (rtp === "lean" ? 0.1 * rv : 0);
+    if (ra) ra.rotation.z = -0.06 - 0.03 * Math.sin(t * 1.3 + 1) - (rtp === "lean" ? 0.1 * rv : 0);
 
     vrm.update(dt);
     this.renderer.render(this.scene, this.camera);

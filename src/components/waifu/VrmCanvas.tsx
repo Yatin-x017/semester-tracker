@@ -26,16 +26,32 @@ export default function VrmCanvas({ onStatus, onEngine, onLoaded }: Props) {
       onEngine(engine);
 
       let url = FALLBACK_VRM;
-      let custom = false; // custom models keep their own colors; sample gets gothic tint
+      let custom = false; // custom models keep their own colors; sample gets recolored
+      let source = "sample";
       try {
         const blob = await loadVrmBlob();
         if (blob) {
           url = URL.createObjectURL(blob);
           objectUrl = url;
           custom = true;
+          source = "stored";
         }
       } catch {
         /* fall back to sample */
+      }
+      // Dev convenience: drop any albedo.vrm into ~/Downloads and refresh —
+      // the dev server serves it at /albedo.vrm.
+      if (!custom && import.meta.env.DEV) {
+        try {
+          const probe = await fetch("/albedo.vrm", { method: "HEAD" });
+          if (probe.ok) {
+            url = "/albedo.vrm";
+            custom = true;
+            source = "downloads";
+          }
+        } catch {
+          /* ignore */
+        }
       }
 
       try {
@@ -45,7 +61,13 @@ export default function VrmCanvas({ onStatus, onEngine, onLoaded }: Props) {
           engine.dispose();
           return;
         }
-        onStatus(custom ? "Albedo — your model" : "Sample model — use Load VRM to add yours");
+        onStatus(
+          custom
+            ? source === "downloads"
+              ? "Albedo (from your Downloads/albedo.vrm)"
+              : "Albedo — your model"
+            : "Sample model — use Load VRM / URL to add yours"
+        );
         onLoaded(custom);
         engine.start();
         if (objectUrl) URL.revokeObjectURL(objectUrl);
