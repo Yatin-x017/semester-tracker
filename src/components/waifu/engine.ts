@@ -13,11 +13,12 @@ export interface PokeAct {
   dx: number;
 }
 
+// Albedo palette: white hair, near-black dress, pale skin, crimson eyes.
 const GOTH = {
-  skin: new THREE.Color(0xf3e9e4),
-  hair: new THREE.Color(0x161019),
-  cloth: new THREE.Color(0x141218),
-  eye: new THREE.Color(0x7d1f2c),
+  skin: new THREE.Color(0xf6ede8),
+  hair: new THREE.Color(0xece7ee),
+  cloth: new THREE.Color(0x0d0c11),
+  eye: new THREE.Color(0x8e1f2c),
 };
 
 /** Gothic-palette tint for the fallback sample model (custom models keep their own colors). */
@@ -34,11 +35,15 @@ function tintGothic(vrm: VRM): void {
       const mx = Math.max(c.r, c.g, c.b);
       const mn = Math.min(c.r, c.g, c.b);
       const sat = mx ? (mx - mn) / mx : 0;
-      if (/eye/.test(n) && !/high|light/.test(n)) m.color.copy(GOTH.eye);
-      else if (/hair|top/.test(n)) m.color.copy(GOTH.hair);
-      else if (/skin|face|body/.test(n) && l > 0.55) m.color.copy(GOTH.skin);
-      else if (l > 0.85 && sat < 0.3) m.color.copy(GOTH.skin);
+      if (/ey(e|e_)|iris|hitomi/.test(n) && !/high|light|lash|brow/.test(n)) m.color.copy(GOTH.eye);
+      else if (/hair|kami|head_..?$/.test(n)) m.color.copy(GOTH.hair);
+      else if (/skin|face|body|hada/.test(n) && l > 0.45) m.color.copy(GOTH.skin);
+      else if (l > 0.8 && sat < 0.25) m.color.copy(GOTH.skin);
       else m.color.copy(GOTH.cloth);
+      // kill colored emission so the palette stays clean
+      if ((m as THREE.MeshStandardMaterial).emissive) {
+        m.emissive.multiplyScalar(0.2);
+      }
     });
   });
 }
@@ -78,13 +83,14 @@ export class VrmEngine {
     this.camera = new THREE.PerspectiveCamera(22, 1, 0.1, 20);
     this.camera.position.set(0, 1.32, 2.6);
 
-    const key = new THREE.DirectionalLight(0xb9aed6, 1.05);
+    const key = new THREE.DirectionalLight(0xd8d2e8, 1.1);
     key.position.set(-1, 2, 3);
     this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0x8e2438, 0.95);
+    // subtle cool rim (a strong red light here was tinting the whole model maroon)
+    const rim = new THREE.DirectionalLight(0x7a5590, 0.4);
     rim.position.set(0, 1.7, -2.6);
     this.scene.add(rim);
-    this.scene.add(new THREE.AmbientLight(0x453f52, 1.05));
+    this.scene.add(new THREE.AmbientLight(0x5a5464, 0.9));
 
     this.lookTarget.position.set(0, 1.35, 2.6);
     this.scene.add(this.lookTarget);

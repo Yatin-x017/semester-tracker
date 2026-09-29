@@ -99,8 +99,35 @@ export default function Waifu({ greeting, onClose }: Props) {
 
   const clearCustom = useCallback(async () => {
     await clearVrmBlob();
+    try {
+      localStorage.removeItem("vrmurl");
+    } catch {
+      /* ignore */
+    }
     setHasCustom(false);
     window.location.reload();
+  }, []);
+
+  const loadFromUrl = useCallback(async () => {
+    const u = window.prompt("Paste a direct URL to a .vrm file (must allow CORS, e.g. Dropbox link with ?dl=1, GitHub raw, BOOTH hosted file)");
+    if (!u) return;
+    try {
+      setStatus("Fetching model…");
+      const r = await fetch(u);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const blob = await r.blob();
+      if (blob.size < 1000) throw new Error("File too small — is that a direct .vrm link?");
+      await saveVrmBlob(blob);
+      try {
+        localStorage.setItem("vrmurl", u);
+      } catch {
+        /* ignore */
+      }
+      setStatus("Model saved. Reloading…");
+      window.location.reload();
+    } catch (err) {
+      setStatus("URL load failed: " + (err instanceof Error ? err.message : String(err)));
+    }
   }, []);
 
   return (
@@ -118,6 +145,7 @@ export default function Waifu({ greeting, onClose }: Props) {
         <span className="g">Waifu</span>
         <button onClick={() => setShowGuide((s) => !s)} title="How to make Albedo in VRoid Studio">Guide</button>
         <button onClick={() => fileRef.current?.click()} title="Load your Albedo .vrm">Load VRM</button>
+        <button onClick={() => void loadFromUrl()} title="Fetch a .vrm from a direct URL">URL</button>
         {hasCustom && (
           <button onClick={() => void clearCustom()} title="Remove your model, use the sample again">Reset</button>
         )}
