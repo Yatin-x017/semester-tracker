@@ -5,6 +5,55 @@ Frontend: React 19 + Vite + TypeScript (src/), code-split so the waifu (three.js
 Worker:   src/worker/index.ts proxies /api/chat to Groq and serves static assets via the Cloudflare Vite plugin.
 Dev:      One command runs both client and worker with HMR (see RUN).
 
+SRC/ STRUCTURE
+src/main.tsx         Entry point: mounts <App /> into #root.
+src/App.tsx          App shell: sidebar, view routing (lazy Waifu), Settings
+                     and Sign-in dialogs, timetable-import handoff, theming.
+src/styles.css       All styling (gothic dark/light theme).
+src/types.ts         Re-exports model types for convenience.
+src/views/           One component per page.
+  Today.tsx            Day view: classes with P/A logging, extra classes,
+                       routine checklist, events, open tasks, due-soon banner.
+  Attendance.tsx       Per-course lecture/lab percentages, policy selector
+                       (75% standard / 60% leeway), safe/below/critical pills.
+  TasksEvents.tsx      Task and event CRUD (progress counters, due dates).
+  Coding.tsx           Manual LeetCode / Codeforces / GitHub logs with
+                       14-day heat strips, streaks and per-difficulty stats.
+  Import.tsx           Editable confirmation table for AI-extracted
+                       timetable rows; nothing is saved until Apply.
+src/components/
+  Assistant.tsx        Chat UI for /api/chat: applies <action> payloads via
+                       Apply buttons, and PDF timetable upload (pdfjs-dist).
+  TaskRow.tsx          Shared task row (counter bump / delete).
+  Waifu.tsx            Waifu panel: speech bubble, poke reactions, voice and
+                       mute toggles, Load VRM / URL / Reset controls.
+  waifu/engine.ts      three.js + @pixiv/three-vrm runtime: render loop, idle
+                       sway, blinking, lip-sync, poke animations, and the
+                       texture-level recolor of the sample model to Albedo.
+  waifu/VrmCanvas.tsx  Canvas mount: loads stored VRM (IndexedDB), dev
+                       /albedo.vrm fallback, else the tinted pixiv sample.
+  waifu/Guide.tsx      In-panel VRoid Studio recipe for making an Albedo VRM.
+src/lib/
+  model.ts           Domain model: AppState types, seed timetable/courses,
+                     normState() validation for all persisted data, date
+                     helpers and attendance math (counts/avg/TH).
+  store.tsx          StoreProvider: localStorage persistence, Supabase auth
+                     (OTP sign-in), cloud sync (debounced upsert, last write
+                     wins, sem3_backup), app token state.
+  ai.ts              Albedo system prompt, chat context builder, ask() to
+                     /api/chat, <action> parsing/validation, timetable
+                     parsing from model output.
+  config.ts          Public runtime config from /config.js (Supabase URL +
+                     anon key); HAS_SB gates sync/sign-in.
+  token.ts           App token for local-only mode; session storage only.
+  speech.ts          Web Speech API voice with Aria / Gothic personas.
+  bus.ts             Tiny pub-sub so the assistant can drive the waifu.
+  vrmStore.ts        IndexedDB persistence for a user-supplied .vrm file.
+src/worker/
+  index.ts           Cloudflare Worker: auth-gated /api/chat proxy to Groq
+                     (Supabase session or APP_TOKEN; fails closed), then
+                     static assets. env.d.ts has worker env types.
+
 SECRETS: what goes where
 Secret, never committed: GROQ_API_KEY, ALLOWED_EMAIL, APP_TOKEN. Locally they live in .dev.vars (git-ignored). On Cloudflare set them with: npx wrangler secret put NAME
 Public, safe to commit: SUPABASE_URL and SUPABASE_ANON_KEY (in wrangler.jsonc) and the same two values in public/config.js. Row level security is what protects the data.
