@@ -6,7 +6,7 @@ export default function Attendance({ state, setState }: { state: AppState; setSt
   const T = TH(state);
 
   const setPolicy = (v: string) => {
-    setState((s) => ({ ...s, dw: v === "no" ? false : undefined }));
+    setState((s) => ({ ...s, pol: v }));
     setSaved(true);
   };
 
@@ -21,7 +21,7 @@ export default function Attendance({ state, setState }: { state: AppState; setSt
           Leeway status (handbook: 75% minimum · 60–74% needs prior approval for university duties · 50–59% medical or
           Venture Studio only · below 50% = course fail)
         </span>
-        <select value={state.dw === false ? "no" : "std"} onChange={(e) => setPolicy(e.target.value)}>
+        <select value={state.pol || "std"} onChange={(e) => setPolicy(e.target.value)}>
           {POL.map(([v, label]) => (
             <option key={v} value={v}>{label}</option>
           ))}

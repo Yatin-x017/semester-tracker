@@ -4,6 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Semester Tracker</title>
+    <script>
+      // Apply the saved theme before first paint to avoid a flash of the wrong palette.
+      try {
+        if (localStorage.getItem("vftheme") === "light") document.documentElement.dataset.theme = "light";
+      } catch (e) {}
+    </script>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" />
   </head>
   <body>

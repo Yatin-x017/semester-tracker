@@ -10,7 +10,7 @@ import Assistant from "./components/Assistant";
 // three.js + VRM are heavy; load the waifu chunk only when opened
 const Waifu = lazy(() => import("./components/Waifu"));
 import { onWaifuSay } from "./lib/bus";
-import { speak, muted } from "./lib/speech";
+import { speak } from "./lib/speech";
 import type { ImpRow } from "./lib/ai";
 
 function greeting(state: AppState): string {
@@ -33,21 +33,30 @@ function greeting(state: AppState): string {
 }
 
 function Shell() {
-  const { state, setState, view, setView, syncing, signedIn, authOpen, closeAuth, sb, authHeaders, signIn, signOut, skipSignIn } = useStore();
+  const { state, setState, view, setView, syncing, signedIn, authOpen, openAuth, sb, authHeaders, signIn, signOut, skipSignIn } = useStore();
   const [cur, setCur] = useState(new Date());
   const [waifuOpen, setWaifuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [impRows, setImpRows] = useState<ImpRow[] | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
-  const [theme] = useState<"dark" | "light">(() => (document.documentElement.dataset.theme as "dark" | "light") || "dark");
-  const [voice] = useState(() => localStorage.getItem("vfvoice") || "aria");
+  const [theme, setTheme] = useState<"dark" | "light">(() => (document.documentElement.dataset.theme as "dark" | "light") || "dark");
 
-  // wire assistant text to waifu speech
+  // wire assistant text to waifu speech (speak() reads the persisted voice/mute live)
   useEffect(() => onWaifuSay((t) => {
     if (!t) return;
-    if (muted() || voice === "none") return;
-    speak(t, voice);
-  }), [voice]);
+    speak(t);
+  }), []);
+
+  const toggleTheme = useCallback(() => {
+    const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem("vftheme", next);
+    } catch {
+      /* ignore */
+    }
+    setTheme(next);
+  }, []);
 
   const applyImport = useCallback(() => {
     if (!impRows) return;
@@ -106,7 +115,7 @@ function Shell() {
           />
         </section>
         <div id="sy" className="hint" style={{ padding: "0 10px" }}>{syncing}</div>
-        <button onClick={() => (signedIn ? void signOut() : sb ? closeAuth() : null)}>{signedIn ? "Sign out" : "Sign in"}</button>
+        {sb && <button onClick={() => (signedIn ? void signOut() : openAuth())}>{signedIn ? "Sign out" : "Sign in"}</button>}
         <button onClick={toggleTheme}>{theme === "dark" ? "Light mode" : "Dark mode"}</button>
         <button onClick={() => setWaifuOpen(true)} hidden={waifuOpen}>Waifu</button>
         <button onClick={() => setSettingsOpen(true)}>Settings</button>
@@ -122,13 +131,6 @@ function Shell() {
       {authOpen && <Auth signIn={signIn} skip={skipSignIn} />}
     </div>
   );
-}
-
-function toggleTheme() {
-  const r = document.documentElement;
-  const next = r.dataset.theme === "light" ? "dark" : "light";
-  r.dataset.theme = next;
-  return next;
 }
 
 function Settings({ onClose }: { onClose: () => void }) {

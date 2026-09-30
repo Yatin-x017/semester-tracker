@@ -117,7 +117,8 @@ export interface CodeState {
 }
 
 export interface AppState {
-  dw?: boolean;
+  // Attendance leeway policy: "std" (75%) | "no" (approved, 60%) | "low" (medical, 50%).
+  pol?: string;
   sfrom?: string;
   rout: Record<string, boolean>;
   tasks: Task[];
@@ -131,7 +132,7 @@ export interface AppState {
 
 export function defaultState(): AppState {
   return {
-    dw: undefined,
+    pol: undefined,
     sfrom: undefined,
     rout: {},
     tasks: JSON.parse(JSON.stringify(DEF_TASKS)),
@@ -148,7 +149,10 @@ export function normState(s: unknown): AppState {
   if (!s || typeof s !== "object") return d;
   const src = s as Record<string, unknown>;
 
-  if (typeof src.dw === "boolean") d.dw = src.dw;
+  // "pol" is the current shape; migrate the legacy boolean "dw" flag
+  // (dw === false meant the 60% leeway policy).
+  const pol = typeof src.pol === "string" ? src.pol : src.dw === false ? "no" : src.dw === true ? "std" : "";
+  if (pol === "std" || pol === "no" || pol === "low") d.pol = pol;
   if (typeof src.sfrom === "string" && DATE.test(src.sfrom)) d.sfrom = src.sfrom;
 
   if (src.rout && typeof src.rout === "object")
@@ -274,8 +278,8 @@ export function avg(state: AppState, c: string, skipP?: Plate): number {
   return v.reduce((x, y) => x + y, 0) / v.length;
 }
 
-/** Attendance threshold: 75 default, 60 with "approved leeway". */
-export const TH = (state: AppState): number => (state.dw === false ? 75 : 60);
+/** Attendance threshold: 75 standard, 60 with approved leeway, 50 medical/Venture floor. */
+export const TH = (state: AppState): number => (state.pol === "no" ? 60 : state.pol === "low" ? 50 : 75);
 
 export const POL: [string, string][] = [
   ["std", "Standard — target 75%"],
@@ -286,10 +290,10 @@ export const POL: [string, string][] = [
 export function st(state: AppState, c: string, x: number): [string, string] {
   if (c === "LHL") return ["Optional", ""];
   const T = TH(state);
-  return x >= T ? ["Safe", "ok"]
-    : x >= T - 15 && T === 75 ? ["Below 75", "warn"]
-    : x >= 50 ? [T === 60 ? "Below 60" : "Danger", T === 60 ? "warn" : "bad"]
-    : ["Critical", "bad"];
+  if (x >= T) return ["Safe", "ok"];
+  if (x >= T - 15) return ["Below " + T, "warn"];
+  if (T > 50 && x >= 50) return ["Danger", "bad"];
+  return ["Critical", "bad"];
 }
 
 export const f1 = (x: number): string => x.toFixed(1);

@@ -89,7 +89,6 @@ export default function Waifu({ greeting, onClose }: Props) {
         sayBubble("So you made me anew? Give me a moment to change.", true);
         // reload canvas by remounting
         window.setTimeout(() => window.location.reload(), 800);
-        sayBubble("So you made me anew? Give me a moment to change.");
       } catch (err) {
         setStatus("Save failed: " + (err instanceof Error ? err.message : String(err)));
       }
@@ -181,7 +180,7 @@ export default function Waifu({ greeting, onClose }: Props) {
           }}
         />
       </div>
-      <VrmCanvas onStatus={setStatus} onEngine={(e) => (engineRef.current = e)} onLoaded={() => setHasCustom(true)} />
+      <VrmCanvas onStatus={setStatus} onEngine={(e) => (engineRef.current = e)} onLoaded={(custom) => setHasCustom(custom)} />
       {bubble && <div className="vb">{bubble}</div>}
       <div className="vrm-status">{status}</div>
       {showGuide && <Guide />}

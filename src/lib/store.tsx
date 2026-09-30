@@ -15,6 +15,7 @@ interface StoreCtx {
   syncing: string;
   signedIn: boolean;
   authOpen: boolean;
+  openAuth: () => void;
   closeAuth: () => void;
   sb: SupabaseClient | null;
   authHeaders: () => Record<string, string>;
@@ -180,6 +181,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSyncing("Local only");
   }, []);
 
+  const openAuth = useCallback(() => {
+    // A prior "use without syncing" choice must not lock the dialog shut.
+    setSkipped(false);
+    setAuthOpen(true);
+  }, []);
   const closeAuth = useCallback(() => setAuthOpen(false), []);
 
   const value = useMemo<StoreCtx>(
@@ -191,6 +197,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       syncing,
       signedIn,
       authOpen: authOpen && !skipped,
+      openAuth,
       closeAuth,
       sb,
       authHeaders,
@@ -200,7 +207,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       token,
       updateToken,
     }),
-    [state, setState, view, syncing, signedIn, authOpen, skipped, closeAuth, sb, authHeaders, signIn, signOut, skipSignIn, token, updateToken]
+    [state, setState, view, syncing, signedIn, authOpen, skipped, openAuth, closeAuth, sb, authHeaders, signIn, signOut, skipSignIn, token, updateToken]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
