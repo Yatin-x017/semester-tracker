@@ -5,6 +5,7 @@ api/**/*.js
 *.zip
 .DS_Store
 *.log
+*.tsbuildinfo
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
