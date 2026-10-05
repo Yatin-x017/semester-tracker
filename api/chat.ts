@@ -1,6 +1,8 @@
 // Vercel serverless function: mirrors the Cloudflare Worker's /api/chat proxy
 // (src/worker/index.ts) so the repo deploys to Vercel without code changes.
-// Web-standard Request/Response signature; streams Groq's SSE straight through.
+// Named POST export per Vercel's function-signature API reference; a default
+// export is treated as the legacy (req, res) style and returned Responses are
+// ignored (hangs until timeout). Streams Groq's SSE straight through.
 //
 // Env vars to set in Vercel:
 //   GROQ_API_KEY (required)
@@ -42,7 +44,7 @@ async function authorized(request: Request, env: Env): Promise<boolean> {
   return request.headers.get("X-App-Token") === env.APP_TOKEN;
 }
 
-export default async function handler(request: Request): Promise<Response> {
+export async function POST(request: Request): Promise<Response> {
   const env = process.env as unknown as Env;
 
   if (request.method !== "POST") return json({ error: "Use POST" }, 405);
