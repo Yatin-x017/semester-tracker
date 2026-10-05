@@ -1,6 +1,6 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StoreProvider, useStore } from "./lib/store";
-import { defaultState, iso, slotsOf, td, type AppState } from "./lib/model";
+import { defaultState, iso, normState, slotsOf, td, type AppState } from "./lib/model";
 import Today from "./views/Today";
 import Attendance from "./views/Attendance";
 import TasksEvents from "./views/TasksEvents";
@@ -100,7 +100,7 @@ function Shell() {
             {label}
           </button>
         ))}
-        <button id="tg" className="mob" onClick={() => setAiOpen(true)}>AI assistant</button>
+        <button id="tg" className="mob" onClick={() => setAiOpen((v) => !v)}>AI assistant</button>
         <section id="ai" className={aiOpen ? "open" : ""} aria-label="AI assistant">
           <Assistant
             state={state}
@@ -112,6 +112,7 @@ function Shell() {
               setAiOpen(false);
             }}
             onUnauthorized={() => setSettingsOpen(true)}
+            onClose={() => setAiOpen(false)}
           />
         </section>
         <div id="sy" className="hint" style={{ padding: "0 10px" }}>{syncing}</div>
@@ -134,10 +135,12 @@ function Shell() {
 }
 
 function Settings({ onClose }: { onClose: () => void }) {
-  const { token, updateToken, sb } = useStore();
+  const { token, updateToken, sb, state, setState } = useStore();
   const [tok, setTok] = useState(token);
   const [v, setV] = useState(localStorage.getItem("vfvoice") || "aria");
   const [mute, setMute] = useState(() => localStorage.getItem("vfmute") === "1");
+  const [msg, setMsg] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const save = (e: React.FormEvent) => {
     e.preventDefault();
@@ -145,6 +148,27 @@ function Settings({ onClose }: { onClose: () => void }) {
     localStorage.setItem("vfvoice", v);
     localStorage.setItem("vfmute", mute ? "1" : "0");
     onClose();
+  };
+
+  const exportData = () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "semester-tracker-" + td() + ".json";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importData = async (f: File) => {
+    try {
+      const next = normState(JSON.parse(await f.text()));
+      if (!confirm("Replace all current data with this backup?")) return;
+      setState(() => next);
+      setMsg("Backup imported.");
+    } catch {
+      setMsg("That file is not a valid backup.");
+    }
   };
 
   return (
@@ -174,6 +198,28 @@ function Settings({ onClose }: { onClose: () => void }) {
         <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <input type="checkbox" checked={mute} onChange={(e) => setMute(e.target.checked)} style={{ width: "auto" }} /> Mute waifu voice
         </label>
+        <h3 className="settings-sub">Backup</h3>
+        <p className="sub">Export a JSON copy of all your data, or restore one.</p>
+        <div className="ar">
+          <button className="b" type="button" onClick={exportData}>
+            Export data
+          </button>
+          <button className="b" type="button" onClick={() => fileRef.current?.click()}>
+            Import data
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void importData(f);
+            }}
+          />
+        </div>
+        {msg && <p className="hint">{msg}</p>}
         <div className="ar">
           <button className="b on">Save</button>
           <button className="b" type="button" onClick={onClose}>Cancel</button>

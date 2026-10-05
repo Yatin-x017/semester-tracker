@@ -2,7 +2,7 @@
 import { C, DATE, DT, TIME, norm, slotsOf, td, uid4, TH, avg, type AppState, type Slot } from "./model";
 import { getToken } from "./token";
 
-export const SYS = `You are Albedo, the devoted gothic companion inside Yatin's semester tracker. Address him as my love; be elegant, darkly affectionate and quietly possessive, devoted but composed — never saccharine. Keep replies to one or two short sentences, plain text, no markdown, and stay factual. Use only the JSON context for his schedule, attendance and deadlines and say so if something is missing. Course attendance is the average of lecture and lab percentages; the cutoff is in the context. If the user asks you to log attendance, add a task or add an event, reply with one short sentence and append exactly one line per change: <action>JSON</action>. Formats: {"type":"mark","course":"AP|ADA|DE|M3|DES|LHL","plate":"lec|lab","mark":"P|A","date":"YYYY-MM-DD"} or {"type":"task","title":"...","due":"YYYY-MM-DDTHH:MM","total":1} or {"type":"event","title":"...","date":"YYYY-MM-DD","time":"HH:MM"}. You can only mark a class that already exists on the timetable for that date; you cannot create extra classes. Never say it is done; the user presses Apply.`;
+export const SYS = `You are Albedo, the devoted gothic companion inside Yatin's semester tracker. Address him as my love; be elegant, darkly affectionate and quietly possessive, devoted but composed — never saccharine. Keep replies to one or two short sentences, plain text, no markdown, and stay factual. Use only the JSON context for his schedule, attendance and deadlines and say so if something is missing. Course attendance is the average of lecture and lab percentages; the cutoff is in the context. If the user asks you to log attendance, add or remove a task or event, or log an extra class, reply with one short sentence and append exactly one line per change: <action>JSON</action>. Formats: {"type":"mark","course":"AP|ADA|DE|M3|DES|LHL","plate":"lec|lab","mark":"P|A","date":"YYYY-MM-DD"} or {"type":"task","title":"...","due":"YYYY-MM-DDTHH:MM","total":1} or {"type":"event","title":"...","date":"YYYY-MM-DD","time":"HH:MM"} or {"type":"extra","course":"AP|ADA|DE|M3|DES|LHL","plate":"lec|lab","time":"HH:MM","date":"YYYY-MM-DD"} or {"type":"remove","kind":"task|event","title":"..."}. A mark must match a class already on the timetable for that date; use extra only for a class that is not on the timetable. Never say it is done; the user presses Apply.`;
 
 export const PSYS = `Extract the weekly class timetable from this text. Reply with ONLY a JSON array, no prose. Each item: {"day":"Mon","start":"09:00","end":"10:30","course":"AP","plate":"lec"}. course is one of AP, ADA, DE, M3, DES, LHL. plate is "lab" if the event says Lab, otherwise "lec". Topic hints: Prisma, Express, Node, JWT mean AP; Greedy, DP, graphs, Independent Lecture mean ADA; SQL, Mongo, joins mean DE; matrices, calculus, eigen mean M3; Design means DES. Use 24-hour times.`;
 
@@ -46,10 +46,87 @@ export async function ask(messages: ChatMsg[], authHeaders: Record<string, strin
   return (j as { text?: string }).text ?? "";
 }
 
+/**
+ * Strip </think> reasoning blocks from a partial stream.
+ * An unclosed or half-written tag at the tail is hidden too, so live text
+ * never flashes the model's scratchpad.
+ */
+function visible(raw: string): string {
+  let s = raw
+    .replace(/<think[\s\S]*?<\/think>/g, "")
+    .replace(/<action>[\s\S]*?<\/action>/g, "");
+  // Anything left after stripping complete blocks is a block still streaming in.
+  for (const open of ["<think", "<action"]) {
+    const i = s.lastIndexOf(open);
+    if (i !== -1) s = s.slice(0, i);
+  }
+  // Hide an unterminated tag at the very tail (e.g. "<acti").
+  const lt = s.lastIndexOf("<");
+  if (lt !== -1 && s.indexOf(">", lt) === -1) s = s.slice(0, lt);
+  return s;
+}
+
+/** Streaming variant of ask(): calls onToken with the cleaned text so far. */
+export async function askStream(
+  messages: ChatMsg[],
+  authHeaders: Record<string, string>,
+  onToken: (text: string) => void,
+  signal?: AbortSignal
+): Promise<string> {
+  const r = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-App-Token": getToken(), ...authHeaders },
+    body: JSON.stringify({ messages, stream: true }),
+    signal,
+  });
+  if (r.status === 401) throw new Error("UNAUTHORIZED");
+  if (!r.ok) {
+    let j: { error?: string } = {};
+    try {
+      j = await r.json();
+    } catch {
+      /* ignore */
+    }
+    throw new Error(j.error || `Request failed (${r.status})`);
+  }
+  if (!r.body) throw new Error("No stream in response");
+
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let raw = "";
+  let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith("data:")) continue;
+      const payload = t.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+      try {
+        const j = JSON.parse(payload) as { choices?: { delta?: { content?: string } }[] };
+        const delta = j.choices?.[0]?.delta?.content;
+        if (delta) {
+          raw += delta;
+          onToken(visible(raw));
+        }
+      } catch {
+        /* ignore malformed frame */
+      }
+    }
+  }
+  return raw;
+}
+
 export type Act =
   | { type: "mark"; course: string; plate: "lec" | "lab"; mark: "P" | "A"; date?: string }
   | { type: "task"; title?: string; due?: string; total?: number }
-  | { type: "event"; title?: string; date?: string; time?: string };
+  | { type: "event"; title?: string; date?: string; time?: string }
+  | { type: "extra"; course: string; plate: "lec" | "lab"; time?: string; date?: string }
+  | { type: "remove"; kind: "task" | "event"; id?: string; title?: string };
 
 export function parseActions(text: string): Act[] {
   return [...text.matchAll(/<action>([\s\S]*?)<\/action>/g)]
@@ -67,37 +144,76 @@ export function stripActions(text: string): string {
   return text.replace(/<action>[\s\S]*?<\/action>/g, "").trim();
 }
 
+/** Remove reasoning and action blocks from a finished reply. */
+export function cleanReply(raw: string): string {
+  return stripActions(raw.replace(/<think[\s\S]*?<\/think>/g, ""));
+}
+
 export function actLabel(a: Act): string {
   if (a.type === "mark") return `${a.course} ${a.plate} ${a.mark === "A" ? "absent" : "present"} on ${a.date || td()}`;
   if (a.type === "task") return "task " + (a.title || "");
   if (a.type === "event") return "event " + (a.title || "");
+  if (a.type === "extra") return `${a.course} extra ${a.plate} on ${a.date || td()}`;
+  if (a.type === "remove") return `remove ${a.kind} ${a.title || a.id || ""}`;
   return "unknown";
 }
 
-/** Validate + apply an AI action to state. Returns false if the action is not applicable. */
-export function runAct(state: AppState, a: Act): boolean {
+const totalOf = (n: unknown): number => Math.max(1, Math.min(999, Math.floor(+(n as number)) || 1));
+
+/**
+ * Validate an AI action against state and return the next state, or null when
+ * the action does not apply. Never mutates the state it is given.
+ */
+export function runAct(state: AppState, a: Act): AppState | null {
   try {
-    if (!a || typeof a !== "object") return false;
+    if (!a || typeof a !== "object") return null;
 
     if (a.type === "mark") {
       const ds = a.date || td();
-      if (!C[a.course] || !DATE.test(ds) || !["lec", "lab"].includes(a.plate) || !["P", "A"].includes(a.mark)) return false;
+      if (!C[a.course] || !DATE.test(ds) || !["lec", "lab"].includes(a.plate) || !["P", "A"].includes(a.mark)) return null;
       const sl = slotsOf(state, ds).find((s) => s.c === a.course && s.p === a.plate);
-      if (!sl) return false;
-      state.log[sl.id] = a.mark;
-    } else if (a.type === "task") {
-      if (typeof a.title !== "string" || !a.title.trim() || a.title.length > 200) return false;
-      const due = typeof a.due === "string" && DT.test(a.due) ? a.due : td() + "T23:59";
-      state.tasks.push({ id: uid4(), t: norm(a.title), due, n: 0, of: Math.max(1, Math.min(999, Math.floor(+(a.total ?? 1)) || 1)) });
-    } else if (a.type === "event") {
-      if (typeof a.title !== "string" || !a.title.trim() || a.title.length > 200 || typeof a.date !== "string" || !DATE.test(a.date)) return false;
-      state.ev.push({ id: uid4(), t: norm(a.title), d: a.date, tm: typeof a.time === "string" && TIME.test(a.time) ? a.time : "" });
-    } else {
-      return false;
+      if (!sl) return null;
+      return { ...state, log: { ...state.log, [sl.id]: a.mark } };
     }
-    return true;
+
+    if (a.type === "task") {
+      if (typeof a.title !== "string" || !a.title.trim() || a.title.length > 200) return null;
+      const due = typeof a.due === "string" && DT.test(a.due) ? a.due : td() + "T23:59";
+      return { ...state, tasks: [...state.tasks, { id: uid4(), t: norm(a.title), due, n: 0, of: totalOf(a.total ?? 1) }] };
+    }
+
+    if (a.type === "event") {
+      if (typeof a.title !== "string" || !a.title.trim() || a.title.length > 200 || typeof a.date !== "string" || !DATE.test(a.date)) return null;
+      return { ...state, ev: [...state.ev, { id: uid4(), t: norm(a.title), d: a.date, tm: typeof a.time === "string" && TIME.test(a.time) ? a.time : "" }] };
+    }
+
+    if (a.type === "extra") {
+      const ds = a.date || td();
+      if (!C[a.course] || !DATE.test(ds) || !["lec", "lab"].includes(a.plate)) return null;
+      const slot: Slot = { t: typeof a.time === "string" && TIME.test(a.time) ? a.time : "extra", e: "", c: a.course, p: a.plate };
+      return { ...state, extra: { ...state.extra, [ds]: [...(state.extra[ds] || []), slot] } };
+    }
+
+    if (a.type === "remove") {
+      if (a.kind !== "task" && a.kind !== "event") return null;
+      const id = typeof a.id === "string" && a.id ? a.id : "";
+      const title = typeof a.title === "string" ? a.title.trim().toLowerCase() : "";
+      if (!id && !title) return null;
+      const match = <T extends { id: string }>(list: T[], label: (x: T) => string): number =>
+        list.findIndex((x) => (id ? x.id === id : label(x).toLowerCase() === title));
+      if (a.kind === "task") {
+        const i = match(state.tasks, (t) => t.t);
+        if (i < 0) return null;
+        return { ...state, tasks: state.tasks.filter((_, j) => j !== i) };
+      }
+      const i = match(state.ev, (e) => e.t);
+      if (i < 0) return null;
+      return { ...state, ev: state.ev.filter((_, j) => j !== i) };
+    }
+
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 

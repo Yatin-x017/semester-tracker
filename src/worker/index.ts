@@ -55,6 +55,7 @@ export default {
         return json({ error: "Empty or too large request" }, 400);
       }
 
+      const stream = (body as { stream?: boolean }).stream === true;
       const upstream = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${env.GROQ_API_KEY}`, "Content-Type": "application/json" },
@@ -63,16 +64,23 @@ export default {
           messages,
           temperature: 0.3,
           max_tokens: 1500,
+          ...(stream ? { stream: true } : {}),
         }),
       });
-      const data = (await upstream.json().catch(() => ({}))) as {
-        error?: { message?: string };
-        choices?: { message?: { content?: string } }[];
-      };
       if (!upstream.ok) {
+        const data = (await upstream.json().catch(() => ({}))) as { error?: { message?: string } };
         const msg = data?.error?.message || "Upstream error";
         return json({ error: msg }, upstream.status === 429 ? 429 : 502);
       }
+      // Pass Groq's SSE straight through so the client can render tokens live.
+      if (stream) {
+        return new Response(upstream.body, {
+          headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" },
+        });
+      }
+      const data = (await upstream.json().catch(() => ({}))) as {
+        choices?: { message?: { content?: string } }[];
+      };
       const text = (data.choices?.[0]?.message?.content || "")
         .replace(/<think>[\s\S]*?<\/think>/g, "")
         .trim();

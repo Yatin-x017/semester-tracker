@@ -1,34 +1,11 @@
-import { C, ROUT, TH, avg, f1, iso, slotsOf, type AppState } from "../lib/model";
+import { C, ROUT, TH, avg, f1, iso, slotsOf, type AppState, type Task } from "../lib/model";
+import TaskRow from "../components/TaskRow";
 
 interface Props {
   state: AppState;
   setState: (u: (s: AppState) => AppState) => void;
   cur: Date;
   setCur: (d: Date) => void;
-}
-
-function TaskRow({
-  t,
-  onBump,
-  onDelete,
-}: {
-  t: AppState["tasks"][number];
-  onBump: (id: string, d: number) => void;
-  onDelete: (id: string) => void;
-}) {
-  const done = t.n >= t.of;
-  return (
-    <div className={"row" + (done ? " done" : "")}>
-      <span className="g">{t.t}</span>
-      <span className="m">
-        {new Date(t.due).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-      </span>
-      <button className="b" onClick={() => onBump(t.id, -1)} aria-label="Minus one">−</button>
-      <span className="m">{t.n}/{t.of}</span>
-      <button className="b" onClick={() => onBump(t.id, 1)} aria-label="Plus one">+</button>
-      <button className="b" onClick={() => onDelete(t.id)} aria-label="Delete task">Delete</button>
-    </div>
-  );
 }
 
 export default function Today({ state, setState, cur, setCur }: Props) {
@@ -67,6 +44,12 @@ export default function Today({ state, setState, cur, setCur }: Props) {
     }));
 
   const delTask = (id: string) => setState((s) => ({ ...s, tasks: s.tasks.filter((t) => t.id !== id) }));
+
+  const editTask = (id: string, patch: Partial<Task>) =>
+    setState((s) => ({
+      ...s,
+      tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...patch, n: Math.min(t.n, patch.of ?? t.of) } : t)),
+    }));
 
   const toggleRout = (key: string, on: boolean) =>
     setState((s) => ({ ...s, rout: { ...s.rout, [key]: on } }));
@@ -177,7 +160,11 @@ export default function Today({ state, setState, cur, setCur }: Props) {
       )}
 
       <h2>Tasks open</h2>
-      {open.length ? open.map((t) => <TaskRow key={t.id} t={t} onBump={bumpTask} onDelete={delTask} />) : <p className="sub">All clear.</p>}
+      {open.length ? (
+        open.map((t) => <TaskRow key={t.id} t={t} onBump={bumpTask} onDelete={delTask} onEdit={editTask} />)
+      ) : (
+        <p className="sub">All clear.</p>
+      )}
     </>
   );
 }
