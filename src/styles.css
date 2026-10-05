@@ -41,6 +41,7 @@ body {
   background: var(--bg);
   color: var(--tx);
   font: 400 14px/1.5 var(--f);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 ::selection {
   background: var(--acc);
@@ -86,13 +87,16 @@ aside > button {
   color: var(--mu);
   display: flex;
   justify-content: space-between;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 aside > button:hover {
   background: var(--hover);
+  transform: translateX(2px);
 }
 aside > button[aria-current="page"] {
   background: var(--hover);
   color: var(--tx);
+  box-shadow: inset 2px 0 0 var(--acc);
 }
 #ai {
   flex: 1;
@@ -241,9 +245,14 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 3px 10px;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
 }
 .b:hover {
   background: var(--hover);
+  border-color: var(--mu);
+}
+.b:active {
+  transform: scale(0.96);
 }
 .b.on {
   background: var(--hover);
@@ -255,6 +264,7 @@ h2 {
   padding: 12px 14px;
   margin: 16px 0;
   border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
 }
 table {
   width: 100%;
@@ -272,6 +282,7 @@ td {
   padding: 8px;
   border-bottom: 1px solid var(--line);
   vertical-align: middle;
+  transition: background-color 0.15s ease;
 }
 tr:hover td {
   background: var(--side);
@@ -288,15 +299,19 @@ tr:hover td {
   border-radius: 3px;
   font-size: 12px;
   background: var(--hover);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 .pill.ok {
   color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 14%, var(--hover));
 }
 .pill.warn {
   color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, var(--hover));
 }
 .pill.bad {
   color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 16%, var(--hover));
 }
 .seg {
   display: inline-flex;
@@ -324,9 +339,11 @@ tr:hover td {
   align-items: center;
   padding: 6px 0;
   border-bottom: 1px solid var(--line);
+  transition: opacity 0.2s ease;
 }
 .row .g {
   flex: 1;
+  transition: color 0.25s ease;
 }
 .row.done .g {
   text-decoration: line-through;
@@ -341,6 +358,11 @@ select {
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 4px 8px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.3s ease;
+}
+input[type="checkbox"] {
+  accent-color: var(--acc);
+  cursor: pointer;
 }
 form {
   display: flex;
@@ -549,5 +571,186 @@ form input[type="text"] {
     width: min(240px, 64vw);
     height: 340px;
     max-height: 52vh;
+  }
+}
+
+/* ---- Motion & polish ---- */
+/* Gothic-calm motion: short, low-distance, ease-out. Never bouncy. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes slide-left {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes ember {
+  /* soft candle-warmth behind the due-soon banner; three pulses, then rests */
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(224, 168, 74, 0);
+  }
+  50% {
+    box-shadow: 0 0 14px 0 rgba(224, 168, 74, 0.22);
+  }
+}
+
+/* View entrance: blocks rise in as a page mounts */
+main h1,
+main h2,
+main .nav,
+main .call,
+main table,
+main form,
+main > p {
+  animation: rise 0.3s ease both;
+}
+main h2 {
+  animation-delay: 0.03s;
+}
+main table {
+  animation-delay: 0.05s;
+}
+main form {
+  animation-delay: 0.06s;
+}
+/* Rows stagger slightly; table rows fade so table layout never shifts */
+main .row {
+  animation: rise 0.3s ease both;
+  animation-delay: 0.06s;
+}
+main tbody tr {
+  animation: fade 0.35s ease both;
+}
+
+/* Chat messages settle in */
+.msg {
+  animation: rise 0.2s ease both;
+}
+
+/* Due-soon banner: warm left edge, brief ember glow */
+.call {
+  animation: rise 0.3s ease both, ember 2.6s ease-in-out 0.6s 3;
+}
+
+/* Dialogs and overlays */
+.settings-dlg {
+  animation: pop 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+.settings-dlg::backdrop {
+  animation: fade 0.22s ease both;
+}
+#auth {
+  animation: fade 0.3s ease both;
+}
+#auth form {
+  animation: slide-up 0.35s ease both;
+}
+
+/* Waifu panel glides in from the right; bubble rises with it */
+#vrm {
+  animation: slide-left 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.vb {
+  animation: rise 0.25s ease both;
+}
+
+/* Full-screen assistant on phones slides up */
+@media (max-width: 720px) {
+  #ai.open {
+    animation: slide-up 0.25s ease both;
+  }
+}
+
+/* Input focus glow (keyboard-visible only) */
+input:focus-visible,
+select:focus-visible,
+#ai textarea:focus-visible {
+  outline: none;
+  border-color: var(--acc);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 22%, transparent);
+}
+
+/* Sidebar title: a small crimson gem before the wordmark */
+aside .t::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #c94f6d, #6e1423);
+  box-shadow: 0 0 10px rgba(201, 79, 109, 0.5);
+}
+
+/* Thin, quiet scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 5px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--mu);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Respect users who prefer no motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
