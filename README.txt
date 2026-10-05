@@ -3,6 +3,8 @@ SEMESTER TRACKER (Cloudflare Workers + Vite + React + TypeScript + Supabase + Gr
 ARCHITECTURE
 Frontend: React 19 + Vite + TypeScript (src/), code-split so the waifu (three.js + @pixiv/three-vrm) loads only when opened.
 Worker:   src/worker/index.ts proxies /api/chat to Groq and serves static assets via the Cloudflare Vite plugin.
+Vercel:   api/chat.ts is the same /api/chat proxy as a Vercel function, so the
+          repo deploys to Vercel instead of Cloudflare without code changes.
 Dev:      One command runs both client and worker with HMR (see RUN).
 
 SRC/ STRUCTURE
@@ -67,11 +69,24 @@ npm run build          (vite build -> dist/)
 npm run preview        (build + run in the real workerd runtime locally)
 npm run deploy         (build + wrangler deploy using the generated output config)
 
+DEPLOY TO VERCEL (alternative to Cloudflare)
+1. Import the repo on vercel.com (framework preset: Vite; build command and
+   output are auto-detected, api/chat.ts ships as a serverless function).
+2. Set env vars for the function: GROQ_API_KEY, ALLOWED_EMAIL, and either
+   SUPABASE_URL + SUPABASE_ANON_KEY (sign-in mode) or APP_TOKEN (local mode).
+   MODEL is optional (default qwen/qwen3.8-27b).
+3. Put the Supabase Project URL and anon key in public/config.js before
+   deploying, and add the vercel.app URL to Supabase Redirect URLs.
+4. Deploy. The 60s function limit is set in vercel.json so streamed replies
+   are not cut off.
+
 With SUPABASE_URL empty the app runs local-only and uses APP_TOKEN. If APP_TOKEN is also empty the AI endpoint refuses every request (fail closed), so set it when running without Supabase.
 
 SUPABASE SETUP (optional, for sync + sign-in)
 1. Create a project at supabase.com.
-2. SQL Editor: paste and run supabase/schema.sql.
+2. SQL Editor: paste and run supabase/schema.sql (idempotent — safe to
+   re-run; it also creates app_state_history, a trigger-kept archive of the
+   last 20 versions of your data for recovery from bad syncs).
 3. Authentication, Providers: keep Email on. Authentication, Sign In / Providers settings: turn off "Allow new users to sign up".
 4. Authentication, Users: Add user, enter your email (this is the only account).
 5. Authentication, URL Configuration: add http://localhost:5173 and your deployed URL to Redirect URLs.
@@ -90,6 +105,14 @@ WHAT V2 ADDS
 Sign-in by email link, cloud sync of all data through Supabase, and AI actions: ask the assistant to log attendance, add a task or add an event, then press the Apply button it shows.
 Timetable import: upload a PDF in the AI panel; the model extracts class blocks and you confirm them in an editable table before anything is saved.
 Sync is last write wins, one row per user. Signing in on a device replaces its local data with the cloud copy; the old local copy is kept under sem3_backup in browser storage.
+
+WHAT V3 ADDS
+Assistant replies stream in token by token with a thinking indicator and a Stop button; the chat is kept for the session (sessionStorage) with a Clear control.
+AI actions now cover logging attendance, adding/removing tasks and events, and logging an extra class; every action is validated and applied as an immutable state update.
+Attendance leeway is a real three-way policy (75% standard / 60% approved / 50% medical).
+Tasks and events can be edited inline (title, due date, counter, time).
+Settings can export all data as JSON and restore a backup.
+Theme choice persists across reloads, and the assistant collapses to a closeable full-screen panel on phones.
 
 SECURITY NOTES
 Never put real credentials in .dev.vars.example or any committed file; use placeholders there only. dist/ is git-ignored (the worker build output can contain .dev.vars copies). If a secret ever lands in git history, rotate it (Groq key at console.groq.com, APP_TOKEN in .dev.vars and `npx wrangler secret put APP_TOKEN`) — rotating is the only real fix.
